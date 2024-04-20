@@ -32,23 +32,49 @@
 #include "word_count.h"
 #include "word_helpers.h"
 
+typedef struct wc_args {
+  word_count_list_t *wcl;
+  FILE *f;
+} wc_args_t;
+
+void count_words_wrap(void *wca) {
+  const wc_args_t *const wc = (wc_args_t *) wca;
+  count_words(wc->wcl, wc->f);
+  pthread_exit(NULL);
+}
+
 /*
  * main - handle command line, spawning one thread per file.
  */
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   /* Create the empty data structure. */
   word_count_list_t word_counts;
   init_words(&word_counts);
-
+  const int nthreads = argc - 1;
+  pthread_t threads[nthreads];
   if (argc <= 1) {
     /* Process stdin in a single thread. */
     count_words(&word_counts, stdin);
   } else {
     /* TODO */
+    for (int i = 0; i < nthreads; ++i) {
+      FILE *f = fopen(argv[i + 1], "r");
+      if (f == NULL) {
+        printf("ERROR; fopen");
+        exit(-1);
+      }
+      wc_args_t wrap = {&word_counts, f};
+      int rc = pthread_create(&threads[i], NULL, count_words_wrap, (void *) &wrap);
+      if (rc) {
+        printf("ERROR; return code from pthread_create() is %d\n", rc);
+        exit(-1);
+      }
+    }
   }
-
+  for (int i = 0; i < nthreads; ++i) pthread_join(threads[i], NULL);
   /* Output final result of all threads' work. */
   wordcount_sort(&word_counts, less_count);
   fprint_words(&word_counts, stdout);
+  pthread_exit(NULL);
   return 0;
 }
